@@ -1,5 +1,17 @@
+# uv sync会读取该文件配置
+#
+
+# 构建方式
+[build-system]
+requires = ["hatchling"]          # 构建时需要的后端包
+build-backend = "hatchling.build" # 使用 Hatchling 作为构建后端
+
+# 打包目录指定
+[tool.hatch.build.targets.wheel]
+packages = ["src/cpy_Claude"]
+
 [project]
-name = "KamaClaude"
+name = "cpyClaude"
 version = "0.0.1"
 requires-python = ">=3.12,<3.13"
 dependencies = [
@@ -8,6 +20,6 @@ dependencies = [
 ]
 
 [project.scripts]
-kama = "Kama_claude.cli.main:main"
-kama-core = "Kama_claude.core.app:run"
-Kama-tui = "Kama_claude.tui.__main__:main"
+cpyClaude = "cpy_Claude.cli.main:main"
+cpyClaude-core = "cpy_Claude.core.app:run"
+cpyClaude-tui = "cpy_Claude.tui.__main__:main"
