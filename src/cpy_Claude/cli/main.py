@@ -2,6 +2,7 @@ import argparse
 import sys
 
 from cpy_Claude.cli.command.version import cmd_version
+from cpy_Claude.cli.command.ping import cmd_ping
 
 def main() -> None:
     parser = argparse.ArgumentParser(prog="cpyClaude",description="cpyClauce CLI")
@@ -16,6 +17,7 @@ def main() -> None:
         return
 
     if args.command == "ping":
+        cmd_ping()
         ...
     else:
         parser.print_help()
