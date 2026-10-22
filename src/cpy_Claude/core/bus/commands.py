@@ -1,5 +1,5 @@
-from pydantic import BaseModel
-from typing import Literal
+from pydantic import BaseModel,Discriminator
+from typing import Literal,Annotated
 
 class PingCommand(BaseModel):
     type: Literal["core.ping"] = "core.ping"
@@ -9,3 +9,9 @@ class PongResult(BaseModel):
     server_version: str
     uptime_ms: int
     received_at: str  # ISO 8601
+
+# 根据 type 字段决定命令类型的判别联合,可以解析成type对应的类型
+Command = Annotated[
+    PingCommand,
+    Discriminator("type"),
+]

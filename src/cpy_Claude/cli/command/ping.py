@@ -5,7 +5,7 @@ import json
 import cpy_Claude
 from cpy_Claude.core.config import config
 from cpy_Claude.core.bus.envelope import JsonRpcError,JsonRpcSuccess
-
+from cpy_Claude.core.bus.commands import PongResult
 
 def cmd_ping(config : config):
     try:
@@ -26,7 +26,7 @@ async def _ping(config : config):
         "params" : {"client": f"cli/{cpy_Claude.__version__}"},
     }
 
-    writer.write((json.dump(req) + "\n").encode())
+    writer.write((json.dumps(req) + "\n").encode())
     await writer.drain()
 
     try:
@@ -41,12 +41,14 @@ async def _ping(config : config):
     writer.close()
     await writer.wait_closed()
 
-    raw = json.load(line)
+    #.loads返回python obj
+    raw = json.loads(line)
     if "error" in raw:
-        e = JsonRpcError.model_validate_json(raw) # 导入json初始化类
+        e = JsonRpcError.model_validate(raw) # 导入json初始化类
         errorobj = e.error
         print(f"_ping func error happens:code({errorobj.code}),message({errorobj.message}),data({errorobj.data})",file=sys.stderr)
 
-    res = JsonRpcSuccess.model_validate_json(raw)
-    print(f"ping success,latency:{latency_ms}ms",file=sys.stdout)
+    res = JsonRpcSuccess.model_validate(raw)
+    ps = PongResult.model_validate(res.result)
+    print(f"ping success,latency:{latency_ms}ms. info:server_version:{ps.server_version},uptime:{ps.uptime_ms / 1000}s,received_at:{ps.received_at}",file=sys.stdout)
 

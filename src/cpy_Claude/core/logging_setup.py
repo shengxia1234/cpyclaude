@@ -15,7 +15,7 @@ _JSON_FMT = '{"level":"%(levelname)s","ts":"%(asctime)s","source":"%(name)s","ms
 def setup_logging(cf : config):
     #获取logging的级别，没有默认info
     level = getattr(logging, cf.logging.level.upper(), logging.INFO)
-    fmt = _JSON_FMT if config.logging.format == "json" else _TEXT_FMT
+    fmt = _JSON_FMT if cf.logging.format == "json" else _TEXT_FMT
     formatter = logging.Formatter(fmt, datefmt="%Y-%m-%dT%H:%M:%S")
 
     root = logging.getLogger()
@@ -30,7 +30,7 @@ def setup_logging(cf : config):
     root.addHandler(stderr_handler)
 
     if cf.logging.file:
-        log_path = Path(config.logging.file).expanduser()
+        log_path = Path(cf.logging.file).expanduser()
         log_path.parent.mkdir(parents=True, exist_ok=True)
         file_handler = logging.handlers.RotatingFileHandler(
             log_path,

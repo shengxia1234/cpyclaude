@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import asyncio
 import sys
 import logging
@@ -6,7 +8,7 @@ import json
 from pydantic import BaseModel,ValidationError
 from collections.abc import Awaitable, Callable
 from typing import Any
-from cpy_Claude.core.bus.envelope import JsonRpcRequest
+from cpy_Claude.core.bus.envelope import JsonRpcRequest,JsonRpcSuccess
 from cpy_Claude.core.bus.envelope import (
     PARSE_ERROR,
     INVALID_REQUEST,
@@ -67,8 +69,8 @@ class SocketServer:
     # 处理单个客户端连接，完成后关闭写流
     async def _handle_connection(
         self,
-        reader=asyncio.StreamReader,
-        writer=asyncio.StreamWriter,
+        reader : asyncio.StreamReader,
+        writer : asyncio.StreamWriter,
     ):
         peer = writer.get_extra_info("peername","unknown")
         logger.debug("client connect:%s",peer)
@@ -85,30 +87,30 @@ class SocketServer:
     # 持续读取换行分隔的 JSON 行并逐行分发处理
     async def _read_loop(
         self,
-        reader=asyncio.StreamReader,
-        writer=asyncio.StreamWriter,
+        reader : asyncio.StreamReader,
+        writer : asyncio.StreamWriter,
     ) -> None:
         while True:
             try:
                 line = await reader.readline()
+                if not line:
+                    break
             except asyncio.LimitOverrunError:
-                self._send(writer,None,INVALID_REQUEST,"Request too large",None)
-            await self._handle_line(line)
-
-            
+                await self._send(writer,make_error(None,INVALID_REQUEST,"Request message too large."))
+            await self._handle_line(line,writer)
 
     # 解析单行 JSON-RPC 请求并调用对应 handler，将结果或错误写回客户端
     async def _handle_line(self,line : bytes,writer : asyncio.StreamWriter) -> None:
         try:
-            raw = json.load(line)
+            raw = json.loads(line)
         except json.JSONDecodeError as e:
-            self._send(writer,make_error(None,PARSE_ERROR,f"Parse error: {e}"))
+            await self._send(writer,make_error(None,PARSE_ERROR,f"Parse error: {e}"))
             return
 
         try:
-            req = JsonRpcRequest.model_validate_json(raw)
+            req = JsonRpcRequest.model_validate(raw)
         except ValidationError as e:
-            self._send(writer,make_error(None,INVALID_REQUEST,f"Invalid request: {e}"))
+            await self._send(writer,make_error(None,INVALID_REQUEST,f"Invalid request: {e}"))
             return
 
         # 使用[]获取，在没有这个key时会返回异常
@@ -117,10 +119,11 @@ class SocketServer:
 
         handler = self._handler.get(req.method)
         if handler is None:
-            self._send(writer,make_error(req.id,METHOD_NOT_FOUND,f"method '{req.method}' not found"))
+            await self._send(writer,make_error(req.id,METHOD_NOT_FOUND,f"method '{req.method}' not found"))
             return
 
-        
+        res = await handler(req.params)
+        await self._send(writer,JsonRpcSuccess(id=req.id,result=res))
 
     # 将 pydantic 消息序列化为 JSON 行并写入流，随后刷新缓冲区
     async def _send(
