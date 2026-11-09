@@ -23,6 +23,11 @@ class JsonRpcError(BaseModel):
     id : str | None = None
     error : JsonRpcErrorObj
 
+# 服务器主动推送事件
+class EventPushEnvelope(BaseModel):
+    kind: Literal["event"] = "event"
+    event: dict[str, Any] # Event.model_dump() 的序列化结果
+
 PARSE_ERROR = -32700      # 解析错误
 INVALID_REQUEST = -32600  # 请求格式错误
 METHOD_NOT_FOUND = -32601 # 方法不存在

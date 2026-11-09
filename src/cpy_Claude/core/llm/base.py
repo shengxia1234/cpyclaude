@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 from typing import Protocol
-from cpy_Claude.core.llm.types import LLMResponseForAnthropic
+from cpy_Claude.core.llm.types import LLMResponse
+from cpy_Claude.core.events.bus import EventBus
 
-class LLMProviderForAnthropic(Protocol):
-    def chat(
+# 静态鸭子类型
+class LLMProvider(Protocol):
+    async def chat(
         self,
-        messages : dict[str,object],
-        tool_schema : dict[str,object],
-        bus : ...,
+        messages : list[dict[str,object]],
+        tool_schema : list[dict[str,object]],
+        bus : EventBus,
         run_id : str
-    ) -> LLMResponseForAnthropic: ...
+    ) -> LLMResponse: ...

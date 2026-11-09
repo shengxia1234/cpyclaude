@@ -1,23 +1,40 @@
 from __future__ import annotations
-from dataclasses import dataclass,field
-# 定义接收LLM消息的数据结构体
+
+from dataclasses import dataclass, field
+
 
 @dataclass
 class UsageForAnthropic:
-    input_tokens : int # 输入的token数量
-    output_token : int # 输出的token数量
-    cache_read_input_tokens: int = 0 # 从缓存读取的输入Token数量
-    cache_creation_input_tokens: int = 0 # 创建缓存使用的输入token数量
+    input_tokens: int
+    output_tokens: int
+    cache_read_input_tokens: int = 0
+    cache_creation_input_tokens: int = 0
+
 
 @dataclass
-class ToolCallBlockForAnthropic:
+class ToolCallBlock:
     id : str
     name : str
-    input : dict[str,object]
+    input : dict[str, object]
+
 
 @dataclass
-class LLMResponseForAnthropic:
-    stop_reason : str # "end_turn" | "tool_use"
-    tool_call : list[ToolCallBlockForAnthropic] = field(default_factory=list)
-    text : str = ""
-    usage : UsageForAnthropic | None = None
+class LLMResponse:
+    stop_reason : str  # "end_turn" | "tool_use"
+    tool_call : list[ToolCallBlock] = field(default_factory=list)
+    text : str | None = ""
+    usage : UsageForAnthropic | UsageForOpenAI |None = None
+
+@dataclass
+class UsageForOpenAI:
+    input_tokens : int
+    output_tokens : int
+    cached_token : int | None = 0 # 命中了提示词缓存token数
+    reasoning_token : int | None= 0 # 模型在生成回答时，内部推理过程所消耗的token数量
+
+@dataclass
+class LLMRequestForOpenAI:
+    model : str
+    messages : list[dict[str,object]]
+    tools : list[dict[str,object]]
+    max_completion_tokens : int

@@ -7,8 +7,10 @@ import json
 
 from pydantic import BaseModel,ValidationError
 from collections.abc import Awaitable, Callable
+from contextvars import ContextVar
 from typing import Any
 from cpy_Claude.core.bus.envelope import JsonRpcRequest,JsonRpcSuccess
+from cpy_Claude.core.transport.ipc_broadcaster import IpcEventBoardCaster
 from cpy_Claude.core.bus.envelope import (
     PARSE_ERROR,
     INVALID_REQUEST,
@@ -23,13 +25,20 @@ type CommandHandler = Callable[[dict[str, Any]], Awaitable[Any]]
 _MAX_LINE_BYTES = 1 * 1024 * 1024  # 1 MB per frame
 logger = logging.getLogger(__name__)
 
+# 在顶层模块使用contextVar，可以让协程和其子协程共同使用一个变量，没有父子关系的协程则拥有不同的变量
+_writer_var : ContextVar[asyncio.StreamWriter] = ContextVar("_writer_var")
+
+def get_writer_var() -> asyncio.StreamWriter:
+    return _writer_var.get()
+
 
 class SocketServer:
-    def __init__(self,host : str,port : int) -> None:
+    def __init__(self,host : str,port : int,boardcaster : IpcEventBoardCaster | None) -> None:
         self._host = host
         self._port = port
         self._handler : dict[str,CommandHandler] = {}
         self._server : asyncio.AbstractServer | None = None
+        self._boardcaster = boardcaster
 
     # 注册一个方法名对应的命令处理函数
     def register(self,method : str,handler : CommandHandler) -> None:
@@ -77,6 +86,8 @@ class SocketServer:
         try:
             await self._read_loop(reader=reader,writer=writer)
         finally:
+            if self._boardcaster is not None:
+                self._boardcaster.unsubscribe(writer)
             writer.close()
             try:
                 await asyncio.wait_for(writer.wait_closed(),timeout=1.0)
@@ -122,7 +133,17 @@ class SocketServer:
             await self._send(writer,make_error(req.id,METHOD_NOT_FOUND,f"method '{req.method}' not found"))
             return
 
-        res = await handler(req.params)
+        _writer_var.set(writer)
+        # 捕获下层的错误
+        try:
+            res = await handler(req.params)
+        except ValidationError:
+            await self._send(writer,make_error(req.id,INVALID_PARAMS,f"Invalid parameters"))
+            return
+        except Exception as e:
+            logger.exception("handler %s raised: %s", req.method, e)
+            await self._send(writer, make_error(req.id, INTERNAL_ERROR, "Internal error"))
+            return
         await self._send(writer,JsonRpcSuccess(id=req.id,result=res))
 
     # 将 pydantic 消息序列化为 JSON 行并写入流，随后刷新缓冲区

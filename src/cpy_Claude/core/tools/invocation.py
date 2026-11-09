@@ -5,7 +5,7 @@ import asyncio
 from typing import cast
 
 from cpy_Claude.core.events.bus import EventBus
-from cpy_Claude.core.llm.types import ToolCallBlockForAnthropic
+from cpy_Claude.core.llm.types import ToolCallBlock
 from cpy_Claude.core.tools.base import ToolResult
 from cpy_Claude.core.bus.events import ToolCallFailEvent,ToolCallFinishEvent,ToolCallStartEvent
 from cpy_Claude.core.tools.registry import ToolRegistry
@@ -22,7 +22,7 @@ async def notify_toolfail(
     run_id : str,
     error_type : str,
     error_msg : str,
-    tool_call : ToolCallBlockForAnthropic,
+    tool_call : ToolCallBlock,
     elapsed_ms : int
 ) -> ToolResult:
     await bus.publish(ToolCallFailEvent(
@@ -36,11 +36,12 @@ async def notify_toolfail(
     ))
     return ToolResult(error_msg,True,error_type)
 
+# 调用工具
 async def invoke_tool(
-    tool_call : ToolCallBlockForAnthropic,
+    tool_call : ToolCallBlock,
     bus : EventBus,
     run_id : str,
-    elapsed_ms : int,
+    # elapsed_ms : int,
     tools : ToolRegistry
 ) -> ToolResult:
     t0 = time.monotonic()
