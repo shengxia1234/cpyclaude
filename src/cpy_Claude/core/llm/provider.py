@@ -5,6 +5,7 @@ import anthropic
 import openai
 import os
 import json
+import logging
 
 from typing import Any
 from cpy_Claude.core.llm.types import LLMResponse
@@ -17,6 +18,8 @@ _SYSTEM_PROMPT = (
     "Use the available tools to complete the user's goal. "
     "When the goal is fully achieved, respond with a final answer and do not call any more tools."
 )
+
+logger = logging.getLogger(__name__)
 tz = datetime.timezone(datetime.timedelta(hours=8))
 # 返回当前 UTC 时间的 ISO 8601 字符串
 def _now() -> str:
@@ -43,9 +46,10 @@ class AnthropicProvider:
         messages : list[dict[str,object]],
         tool_schema : list[dict[str,object]],
         bus : EventBus,
-        run_id : str
+        run_id : str,
+        step : int = 0
     ) -> LLMResponse:
-        await bus.publish(LLMModelSelectedEvent(run_id=run_id,model=self._model,strategy="static",ts=_now()))
+        await bus.publish(LLMModelSelectedEvent(run_id=run_id,model=self._model,strategy="static",ts=_now(),api="anthropic"))
         # 使用读取缓存，将断点前的内容进行缓存，注意内容必须完全一致才能触发缓存
         SystemPrompt : list[dict[str,object]] = [{"type":"text","text":_SYSTEM_PROMPT,"cache_control":{"type": "ephemeral"}}]
         # 浅拷贝
@@ -85,17 +89,24 @@ class AnthropicProvider:
                 ts=_now()
             )
         )
+
+        thinking = {}
         tool_call : list[ToolCallBlock] = []
         for block in final_msg.content:
             if block.type == "tool_use":
                 tool_call.append(ToolCallBlock(id=block.id,name=block.name,input=block.input))
-            
+            # 兼容thinking模式
+            if block.type == "thinking":
+                thinking["thinking"] = block.thinking
+                thinking["signature"] = block.signature
+
         # str(list)是将列表直接转为str，join(list)则是将列表元素组合在一起变成str
         return LLMResponse(
             stop_reason=final_msg.stop_reason or "end_turn",
             tool_call=tool_call,
             text="".join(text_parts),
             usage=UsageForAnthropic(usage.input_tokens,usage.output_tokens,cache_read_usage,cache_create_usage),
+            thinking=thinking if thinking else None
         )
 
 class OpenAIProvider:
@@ -119,9 +130,10 @@ class OpenAIProvider:
         messages : list[dict[str,object]],
         tool_schema : list[dict[str,object]],
         bus : EventBus,
-        run_id : str
+        run_id : str,
+        step : int = 0
     ) -> LLMResponse:
-        await bus.publish(LLMModelSelectedEvent(run_id=run_id,model=self._model,strategy="static",ts=_now()))
+        await bus.publish(LLMModelSelectedEvent(run_id=run_id,model=self._model,strategy="static",ts=_now(),api="openai"))
 
         LLMMessageStruct = LLMRequestForOpenAI(
             model=self._model,
@@ -150,6 +162,14 @@ class OpenAIProvider:
         text = text_parts.choices[0].message.content
         usage = text_parts.usage
         Usage = None
+        reasoning_content = getattr(
+            text_parts.choices[0].message,
+            "reasoning_content",
+            None
+        ) # 兼容thinking模式
+        thinking = {}
+        if reasoning_content:
+            thinking = {"thinking": reasoning_content}
         if usage is not None:
             Usage = UsageForOpenAI(
                 usage.prompt_tokens,
@@ -158,4 +178,4 @@ class OpenAIProvider:
                 usage.completion_tokens_details.reasoning_tokens if usage.completion_tokens_details else None
             )
         
-        return LLMResponse(stop_reason,Tool_calls,text,Usage)
+        return LLMResponse(stop_reason,Tool_calls,text,Usage,thinking if thinking else None)

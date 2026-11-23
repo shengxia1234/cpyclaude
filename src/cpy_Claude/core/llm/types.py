@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any
 
 
 @dataclass
@@ -23,7 +24,8 @@ class LLMResponse:
     stop_reason : str  # "end_turn" | "tool_use"
     tool_call : list[ToolCallBlock] = field(default_factory=list)
     text : str | None = ""
-    usage : UsageForAnthropic | UsageForOpenAI |None = None
+    usage : UsageForAnthropic | UsageForOpenAI | None = None
+    thinking : dict | None = None # 用于兼容使用thinking模式的LLM
 
 @dataclass
 class UsageForOpenAI:

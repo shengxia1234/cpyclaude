@@ -34,8 +34,10 @@ class EventWriter:
                 if self._pending_events >= 100:
                     self._file.flush()
                     self._pending_events = 0
+                self._pending_events += 1
             except (OSError,ValueError) as e:
                 logging.error("Event Write error:%s",e)
+            self._file.flush()
 
     def subscribe(self,bus : EventBus):
         bus.subscribe(self.handle)

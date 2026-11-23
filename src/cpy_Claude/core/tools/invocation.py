@@ -10,7 +10,7 @@ from cpy_Claude.core.tools.base import ToolResult
 from cpy_Claude.core.bus.events import ToolCallFailEvent,ToolCallFinishEvent,ToolCallStartEvent
 from cpy_Claude.core.tools.registry import ToolRegistry
 
-_DEFAULT_TIMEOUT: float = 10.0
+_DEFAULT_TIMEOUT: float = 120.0
 tz = datetime.timezone(datetime.timedelta(hours=8))
 
 def _now() -> str:
@@ -65,8 +65,9 @@ async def invoke_tool(
     if missing:
         return await notify_toolfail(bus,run_id,"runtime_error",f"missing parameters:{",".join(missing)}",tool_call,elapsed())
 
+    allowed = set(tool.input_schema.get("properties", {})) # type: ignore[call-overload]
     #检查意外参数
-    unexpected = [param for param in tool_call.input if param not in required]
+    unexpected = [param for param in tool_call.input if param not in allowed]
     if unexpected:
         return await notify_toolfail(bus,run_id,"runtime_error",f"unexpected parameters:{",".join(unexpected)}",tool_call,elapsed())
 
@@ -80,7 +81,8 @@ async def invoke_tool(
             tool_id=tool_call.id,
             tool_name=tool_call.name,
             elapsed_ms=elapsed(),
-            ts=_now()
+            ts=_now(),
+            output=result.content
         ))
         return result
     except TimeoutError:

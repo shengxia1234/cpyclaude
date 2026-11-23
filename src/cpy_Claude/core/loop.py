@@ -1,14 +1,17 @@
 from __future__ import annotations
 import datetime
 import asyncio
+import logging
 
 from cpy_Claude.core.llm.base import LLMProvider
+from cpy_Claude.core.trace.provider import TraceProvider
 from cpy_Claude.core.tools.registry import ToolRegistry
 from cpy_Claude.core.events.bus import EventBus
 from cpy_Claude.core.context import ExecutionContext
 from cpy_Claude.core.bus.events import StepStartEvent,StepFinishEvent
 from cpy_Claude.core.llm.provider import AnthropicProvider,OpenAIProvider
 from cpy_Claude.core.tools.invocation import invoke_tool
+logger = logging.getLogger(__name__)
 
 tz = datetime.timezone(datetime.timedelta(hours=8))
 # 返回当前 UTC 时间的 ISO 8601 字符串
@@ -24,15 +27,21 @@ class AgentLoop:
     async def loop(self,context : ExecutionContext):
         if isinstance(self._LLM,OpenAIProvider):
             tool_schema = self._tools.tool_schema_openai()
-        else:
+        elif isinstance(self._LLM,AnthropicProvider):
             tool_schema = self._tools.tool_schema_anthropic()
+        elif isinstance(self._LLM,TraceProvider):
+            if self._LLM.which_api == "openai":
+                tool_schema = self._tools.tool_schema_openai()
+            else:
+                tool_schema = self._tools.tool_schema_anthropic()
+
 
         while not context.is_done:
             context.step_now += 1
             await self._bus.publish(StepStartEvent(run_id=context.run_id,step=context.step_now,ts=_now()))
         # 发送请求
             try:
-                response = await self._LLM.chat(context.messages,tool_schema,self._bus,context.run_id)
+                response = await self._LLM.chat(context.messages,tool_schema,self._bus,context.run_id,context.step_now)
             except asyncio.CancelledError:
                 context.mark_failed("cancelled")
                 raise
@@ -52,8 +61,10 @@ class AgentLoop:
                     res = await invoke_tool(tool_call,self._bus,context.run_id,self._tools)
                     context.add_tool_result(tool_call.id,res.content)
             elif response.stop_reason in ("end_turn","stop"):
+                context.result = response.text or ""
                 context.mark_success()
-            elif context.step_now >= context.step_max:
+
+            if context.step_now >= context.step_max and not context.is_done:
                 context.mark_failed("exceeded max step")
         # 结束
             await self._bus.publish(StepFinishEvent(run_id=context.run_id,step=context.step_now,ts=_now()))

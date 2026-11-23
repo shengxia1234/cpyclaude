@@ -12,7 +12,7 @@ class ReadFileTool(BaseTool):
         "Path must be relative to the current working directory. "
         "Files larger than 512 KB are truncated."
     )
-    # Anthropic
+
     input_schema = {
         "type": "object",
         "properties": {
@@ -25,10 +25,13 @@ class ReadFileTool(BaseTool):
     }
 
     async def invoke(self, params: dict[str, object]) -> ToolResult:
-        path_str = str(params["path"])
-        path = Path(path_str)
+        path_str = params.get("path")
+        if path_str is None:
+            return ToolResult(f"The ReadFileTool received an invalid value '{path_str}' for the 'path_str' argument",True,"runtime_error")
+        path = Path(str(path_str))
         # 不能访问上一级目录
         if ".." in path.parts:
+            # 错误会被上一层的调用方捕获，与返回带有错误信息的ToolResult效果相同
             raise PermissionError(f"path traversal is not allowed:{path_str}")
 
         # 禁止访问绝对路径

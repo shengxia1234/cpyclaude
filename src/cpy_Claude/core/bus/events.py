@@ -59,6 +59,7 @@ class ToolCallFinishEvent(BaseEvent):
     tool_id : str
     tool_name : str
     elapsed_ms : int # 经过的时间
+    output : str # 工具调用结果，用于tui展示
     ts : str
 
 # 工具调用失败事件
@@ -96,6 +97,7 @@ class LLMModelSelectedEvent(BaseEvent):
     model: str
     strategy: str  # "static" | "rule_based" | "cost_budget"
     ts: str
+    api: str
 
 # 通用结构化日志事件
 class LogLineEvent(BaseEvent):

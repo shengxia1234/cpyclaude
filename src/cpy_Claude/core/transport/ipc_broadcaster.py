@@ -5,12 +5,18 @@ import asyncio
 import uuid
 import fnmatch
 import json
+import datetime
 
 from dataclasses import dataclass
 from cpy_Claude.core.bus.events import BaseEvent
 from cpy_Claude.core.bus.envelope import EventPushEnvelope
+from cpy_Claude.core.trace.writer import TraceWriter,TraceRecord
 
 logger = logging.getLogger(__name__)
+
+tz = datetime.timezone(datetime.timedelta(hours=8))
+def _now() -> str:
+    return datetime.datetime.now(tz).isoformat()
 
 @dataclass
 class _Subscription:
@@ -20,8 +26,9 @@ class _Subscription:
     scope: str
 
 class IpcEventBoardCaster:
-    def __init__(self):
+    def __init__(self,trace_writer : TraceWriter | None = None):
         self._subscription : list[_Subscription] = []
+        self._trace = trace_writer
 
     def subscribe(self,writer : asyncio.StreamWriter,topics : list[str],scope : str) -> str:
         sub_id = f"sub-{uuid.uuid4().hex[:8]}"
@@ -52,6 +59,17 @@ class IpcEventBoardCaster:
                 envelope = EventPushEnvelope(event=event.model_dump())
                 sub.writer.write(envelope.model_dump_json().encode() + b"\n")
                 await sub.writer.drain()
+                if self._trace is not None:
+                    client_id = sub.writer.get_extra_info("peername","<unknown>")
+                    self._trace.emit(TraceRecord(
+                        ts=_now(),
+                        direction="CORE->CLIENT",
+                        layer="ipc",
+                        kind="push",
+                        run_id=run_id,
+                        client_id=str(client_id),
+                        data={"sub_id": sub.sub_id,"event_type": event.type}
+                    ))
             except (ConnectionResetError,BrokenPipeError,OSError):
                 logger.debug("dead connection for sub %s, scheduling cleanup", sub.sub_id)
                 dead.append(sub.writer)

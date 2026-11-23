@@ -42,6 +42,13 @@ class SocketClient:
     def on_event(self,handler : PushEventHandler):
         self._event_handler.append(handler)
 
+    async def send_shutdown_command(self,method : str,params : dict[str,Any]) -> None:
+        if self._writer is None:
+            raise RuntimeError("The connection writer is None.")
+        req = JsonRpcRequest(method=method,params=params)
+        self._writer.write(req.model_dump_json().encode() + b"\n")
+        await self._writer.drain()
+
     # 发送 JSON-RPC 命令并等待响应，成功返回 result dict
     async def send_command(self,method : str,params : dict[str,Any]) -> dict[str,Any]:
         if self._writer is None:
@@ -81,8 +88,8 @@ class SocketClient:
             return RuntimeError("The JsonRpc message can not be decoded.")
         if res.get("jsonrpc") is not None:
             req_id = res["id"]
-            fut = self._pending.pop(req_id)
-            if not fut.done():
+            fut = self._pending.pop(req_id,None)
+            if fut and not fut.done():
                 if res.get("error") is None:
                     fut.set_result(res.get("result",{}))
                 else:

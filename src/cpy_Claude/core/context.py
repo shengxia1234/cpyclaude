@@ -21,8 +21,9 @@ class ExecutionContext:
     step_now : int = 0
     messages : list[dict[str,Any]] = field(default_factory=list)
     status : str = "running"
-    reason : str | None = None #失败原因
+    reason : str | None = None # 失败原因
     which_api : str = "anthropic"
+    result : str = "" # 保存最终执行结果
 
     # 初始化历史,将用户问题放入messages中
     def __post_init__(self) -> None:
@@ -41,6 +42,8 @@ class ExecutionContext:
                     "role" : "user",
                     "content" : self.goal
                 })
+        else:
+            raise ValueError("The goal is empty")
 
     # def add_assistant_message(self,content : list[Any]):
     #     self.messages.append({
@@ -51,6 +54,8 @@ class ExecutionContext:
     def _add_assistant_message(self,response : LLMResponse):
         if self.which_api == "anthropic":
             blocks: list[dict[str, object]] = []
+            if response.thinking:
+                blocks.append({"type": "thinking","thinking": response.thinking.get("thinking"),"signature": response.thinking.get("signature")})
             if response.text:
                 blocks.append({"type": "text","text": response.text})
             for tc in response.tool_call:
@@ -75,11 +80,19 @@ class ExecutionContext:
                             "arguments" : json.dumps(tc.input)
                         }
                     })
-            self.messages.append({
-                "role" : "assistant",
-                "content" : content,
-                "tool_calls" : tool_calls
-            })
+            if response.thinking:
+                self.messages.append({
+                    "role" : "assistant",
+                    "content" : content,
+                    "tool_calls" : tool_calls,
+                    "reasoning_content" : response.thinking
+                })
+            else:
+                self.messages.append({
+                    "role" : "assistant",
+                    "content" : content,
+                    "tool_calls" : tool_calls
+                })
 
     # 将工具执行结果添加到发送消息中
     def add_tool_result(self,tool_id : str,content : str,is_error : bool = False):

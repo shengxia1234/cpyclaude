@@ -13,6 +13,7 @@ _DEFAULT_CONFIG_PATH = "~/.cpyClaude/config.toml"
 _DEFAULT_MODEL = "..."
 _DEFAULT_MAX_STEPS = 20
 _DEFAULT_API = "anthropic"
+_DEFAULT_TRACE_FILE = "~/.kama/traces/daemon.jsonl"
 
 @dataclass
 class LoggingConfig:
@@ -24,7 +25,13 @@ class LoggingConfig:
 class LLMConfig:
     max_steps : int = _DEFAULT_MAX_STEPS
     model : str = _DEFAULT_MODEL
-    which_api = _DEFAULT_API
+    which_api : str = _DEFAULT_API
+
+@dataclass
+class TraceConfig:
+    enabled : bool = True
+    file : str = _DEFAULT_TRACE_FILE
+    include_llm_payload : bool = False
 
 @dataclass
 class config:
@@ -32,6 +39,7 @@ class config:
     port : int = _DEFAULT_PORT
     logging : LoggingConfig = field(default_factory=LoggingConfig)
     LLM : LLMConfig = field(default_factory=LLMConfig)
+    trace : TraceConfig = field(default_factory=TraceConfig)
 
 # 构建并返回运行时配置：默认值 → .env
 def get_config() -> config:
@@ -76,6 +84,28 @@ def _apply_env(cf : config):
     if logging_format is not None:
         cf.logging.format = logging_format
 
+    trace_enabled = os.getenv("TRACE_ENABLED")
+    if trace_enabled is not None:
+        if trace_enabled in ("False" , "false"):
+            cf.trace.enabled = False
+        elif trace_enabled in ("True" , "true"):
+            cf.trace.enabled = True
+        else:
+            raise SystemExit("The parameter 'TRACE_ENABLED' is illegal.It can only be set in one of following values:(False,false,True,true)")
+
+    trace_file = os.getenv("TRACE_FILE")
+    if trace_file is not None:
+        cf.trace.file = trace_file
+
+    trace_payload = os.getenv("TRACE_PAYLOAD")
+    if trace_payload is not None:
+        if trace_payload in ("False" , "false"):
+            cf.trace.include_llm_payload = False
+        elif trace_payload in ("True" , "true"):
+            cf.trace.include_llm_payload = True
+        else:
+            raise SystemExit("The paramster 'TRACE_PAYLOAD' is illegal.It can only be set in one of following values:(False,false,True,true)")
+    
     if cf.LLM.which_api == "anthropic":
         default_model = os.getenv("ANTHROPIC_LLM_DEFAULT_MODEL")
         if default_model is not None:

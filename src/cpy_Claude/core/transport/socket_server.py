@@ -4,6 +4,7 @@ import asyncio
 import sys
 import logging
 import json
+import datetime
 
 from pydantic import BaseModel,ValidationError
 from collections.abc import Awaitable, Callable
@@ -17,8 +18,15 @@ from cpy_Claude.core.bus.envelope import (
     METHOD_NOT_FOUND,
     INVALID_PARAMS,
     INTERNAL_ERROR,
+    HandlerError,
+    JsonRpcError,
     make_error
 )
+from cpy_Claude.core.trace.writer import TraceWriter,TraceRecord
+
+tz = datetime.timezone(datetime.timedelta(hours=8))
+def _now() -> str:
+    return datetime.datetime.now(tz).isoformat()
 
 # 定义可调用对象,传入参数为 dict[str,Any],且函数为可使用await的对象，返回值为Any
 type CommandHandler = Callable[[dict[str, Any]], Awaitable[Any]]
@@ -33,12 +41,13 @@ def get_writer_var() -> asyncio.StreamWriter:
 
 
 class SocketServer:
-    def __init__(self,host : str,port : int,boardcaster : IpcEventBoardCaster | None) -> None:
+    def __init__(self,host : str,port : int,boardcaster : IpcEventBoardCaster | None,trace_writer : TraceWriter | None = None) -> None:
         self._host = host
         self._port = port
         self._handler : dict[str,CommandHandler] = {}
         self._server : asyncio.AbstractServer | None = None
         self._boardcaster = boardcaster
+        self._trace = trace_writer
 
     # 注册一个方法名对应的命令处理函数
     def register(self,method : str,handler : CommandHandler) -> None:
@@ -106,9 +115,9 @@ class SocketServer:
                 line = await reader.readline()
                 if not line:
                     break
-            except asyncio.LimitOverrunError:
+                await self._handle_line(line,writer)
+            except (asyncio.LimitOverrunError,ValueError):
                 await self._send(writer,make_error(None,INVALID_REQUEST,"Request message too large."))
-            await self._handle_line(line,writer)
 
     # 解析单行 JSON-RPC 请求并调用对应 handler，将结果或错误写回客户端
     async def _handle_line(self,line : bytes,writer : asyncio.StreamWriter) -> None:
@@ -124,6 +133,17 @@ class SocketServer:
             await self._send(writer,make_error(None,INVALID_REQUEST,f"Invalid request: {e}"))
             return
 
+        if self._trace is not None:
+            client_id = writer.get_extra_info("peername","<unknown>")
+            self._trace.emit(TraceRecord(
+                ts=_now(),
+                direction="CLIENT->CORE",
+                layer="ipc",
+                kind="command",
+                client_id=str(client_id),
+                data={"req_id": req.id,"method": req.method,"params": req.params}
+            ))
+
         # 使用[]获取，在没有这个key时会返回异常
         # if self._handler[req.method] is None:
         #     self._send(writer,make_error(req.id,METHOD_NOT_FOUND,f"method {req.method} not found"))
@@ -137,6 +157,9 @@ class SocketServer:
         # 捕获下层的错误
         try:
             res = await handler(req.params)
+        except HandlerError as e:
+            await self._send(writer, make_error(req.id, e.code, str(e), e.data))
+            return
         except ValidationError:
             await self._send(writer,make_error(req.id,INVALID_PARAMS,f"Invalid parameters"))
             return
@@ -154,4 +177,15 @@ class SocketServer:
     ):
         writer.write(msg.model_dump_json().encode() + b"\n")
         await writer.drain()
+        if self._trace is not None:
+            client_id = writer.get_extra_info("peername","<unknown>")
+            kind = "response" if isinstance(msg,JsonRpcSuccess) else "error"
+            self._trace.emit(TraceRecord(
+                ts=_now(),
+                direction="CORE->CLIENT",
+                layer="ipc",
+                kind=kind,
+                client_id=str(client_id),
+                data=msg.model_dump()
+            ))
         
